@@ -44,8 +44,12 @@ class EconomicEvent:
 # Fetcher Functions (merged from fetcher.py)
 # =============================================================================
 
-def fetch_calendar_data() -> list[dict]:
-    """Fetch economic calendar data from API with retry logic"""
+def fetch_calendar_data() -> Optional[list[dict]]:
+    """Fetch economic calendar data from API with retry logic
+
+    Returns:
+        Parsed JSON list on success (may be empty), None on fetch/parse failure.
+    """
     for attempt in range(MAX_RETRIES):
         try:
             req = urllib.request.Request(
@@ -68,15 +72,15 @@ def fetch_calendar_data() -> list[dict]:
                     time.sleep(wait_time)
                     continue
             print(f"⚠️  HTTP error {e.code}: {e.reason}")
-            return []
+            return None
         except urllib.error.URLError as e:
             print(f"⚠️  URL error: {e.reason}")
-            return []
+            return None
         except json.JSONDecodeError as e:
             print(f"⚠️  JSON decode error: {e}")
-            return []
+            return None
 
-    return []
+    return None
 
 
 def map_event_type(title: str) -> str:
@@ -150,13 +154,17 @@ def parse_event(event_data: dict) -> Optional[EconomicEvent]:
         return None
 
 
-def fetch_us_high_impact_events() -> list[EconomicEvent]:
-    """Fetch US high-impact economic events from API"""
+def fetch_us_high_impact_events() -> Optional[list[EconomicEvent]]:
+    """Fetch US high-impact economic events from API
+
+    Returns:
+        List of high-impact events (may be empty), or None if the API fetch failed.
+    """
     raw_data = fetch_calendar_data()
 
-    if not raw_data:
-        print("⚠️  No data fetched from API, falling back to static data")
-        return []
+    if raw_data is None:
+        print("❌ API request failed, no data returned")
+        return None
 
     events = []
     for event_data in raw_data:
@@ -264,18 +272,21 @@ def save_calendar(output_path: Path) -> Path:
     """
     # Fetch from API only
     events = fetch_us_high_impact_events()
-    
-    if not events:
+
+    if events is None:
         print("❌ Failed to fetch events from API. Exiting.")
         sys.exit(1)
-    
+
+    if not events:
+        print("ℹ️  No high-impact US events this week; generating an empty calendar.")
+
     # Filter past events (keep last 7 days for reference)
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(days=7)
-    
+
     future_events = [e for e in events if e.date >= cutoff]
-    
-    if not future_events:
+
+    if events and not future_events:
         print("⚠️  No future events found in API response.")
         future_events = events  # Use all events if no future ones
     
